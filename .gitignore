@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local Environment Variables & Secrets
+.env
+
+# SQLite Database
+*.db
+*.sqlite3
+
+# Local Uploads & Artifacts
+uploads/photos/*
+!uploads/photos/.gitkeep
+uploads/reports/*
+!uploads/reports/.gitkeep
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+powershell.cmd
