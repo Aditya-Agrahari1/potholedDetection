@@ -46,7 +46,11 @@ def get_location_reports(
             photo_path=r.photo_path,
             photo_url=f"/api/v1/reports/{r.id}/photo",
             timestamp=r.timestamp,
-            detection_data=r.detection_data,
+            detection_data=(
+                {k: v for k, v in r.detection_data.items() if not k.startswith("_")}
+                if isinstance(r.detection_data, dict)
+                else r.detection_data
+            ),
             status=r.status,
             compared_to_id=r.compared_to_id,
             pdf_path=r.pdf_path,

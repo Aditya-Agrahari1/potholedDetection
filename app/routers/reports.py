@@ -1,3 +1,4 @@
+import base64
 import os
 import uuid
 from datetime import datetime
@@ -23,6 +24,13 @@ from app.services.storage import StorageService, get_storage_service
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 settings = get_settings()
+
+
+def clean_detection_data(data):
+    """Strip internal database backup fields like _photo_base64 from API responses."""
+    if isinstance(data, dict):
+        return {k: v for k, v in data.items() if not k.startswith("_")}
+    return data
 
 
 def parse_iso_datetime(dt_str: str) -> datetime:
@@ -148,19 +156,40 @@ async def create_report(
             .first()
         )
 
+    old_photo_bytes = None
+    if matched is not None and previous_report is not None:
+        if storage.file_exists(previous_report.photo_path):
+            try:
+                old_photo_bytes = storage.read_file(previous_report.photo_path)
+            except Exception:
+                pass
+
+        # If photo is missing from local disk (Render ephemeral restart), recover from database backup!
+        if not old_photo_bytes and isinstance(previous_report.detection_data, dict):
+            b64_str = previous_report.detection_data.get("_photo_base64")
+            if b64_str:
+                try:
+                    old_photo_bytes = base64.b64decode(b64_str)
+                    storage.save_file(
+                        old_photo_bytes,
+                        os.path.basename(previous_report.photo_path),
+                        subfolder="photos",
+                    )
+                except Exception:
+                    pass
+
     can_compare = (
         matched is not None
         and previous_report is not None
-        and storage.file_exists(previous_report.photo_path)
+        and old_photo_bytes is not None
     )
 
-    if can_compare and previous_report is not None:
+    if can_compare and previous_report is not None and old_photo_bytes is not None:
         # Sequential follow-up report at existing location -> Run comparison
         compared_to_id = previous_report.id
         abs_old_photo_path = storage.get_absolute_path(previous_report.photo_path)
 
         try:
-            old_photo_bytes = storage.read_file(previous_report.photo_path)
             old_mime = "image/png" if previous_report.photo_path.endswith(".png") else "image/jpeg"
 
             comparison_result = gemini.compare_potholes(
@@ -207,6 +236,10 @@ async def create_report(
                 },
             )
 
+    # Backup photo bytes to database JSON to guarantee persistence across Render container restarts
+    if isinstance(detection_data, dict):
+        detection_data["_photo_base64"] = base64.b64encode(photo_bytes).decode("utf-8")
+
     # 6. Create Report DB record
     new_report = Report(
         location_id=location.id,
@@ -249,12 +282,18 @@ async def create_report(
     db.commit()
     db.refresh(new_report)
 
+    clean_det = (
+        {k: v for k, v in new_report.detection_data.items() if not k.startswith("_")}
+        if isinstance(new_report.detection_data, dict)
+        else new_report.detection_data
+    )
+
     return ReportCreateResponse(
         report_id=new_report.id,
         location_id=location.id,
         status=new_report.status,
         compared_to_report_id=new_report.compared_to_id,
-        detection=new_report.detection_data,
+        detection=clean_det,
         pdf_url=f"/api/v1/reports/{new_report.id}/pdf",
         created_at=new_report.created_at,
     )
@@ -289,7 +328,7 @@ def get_report(
         photo_path=report.photo_path,
         photo_url=f"/api/v1/reports/{report.id}/photo",
         timestamp=report.timestamp,
-        detection_data=report.detection_data,
+        detection_data=clean_detection_data(report.detection_data),
         status=report.status,
         compared_to_id=report.compared_to_id,
         pdf_path=report.pdf_path,
@@ -408,7 +447,7 @@ def list_reports(
             photo_path=r.photo_path,
             photo_url=f"/api/v1/reports/{r.id}/photo",
             timestamp=r.timestamp,
-            detection_data=r.detection_data,
+            detection_data=clean_detection_data(r.detection_data),
             status=r.status,
             compared_to_id=r.compared_to_id,
             pdf_path=r.pdf_path,
