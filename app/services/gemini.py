@@ -121,7 +121,7 @@ class GeminiService:
         if self.is_mock:
             raise RuntimeError("Mock mode active; should not invoke live client directly")
 
-        # Candidate models to try in order if Google returns 503 High Demand / 429
+        # Candidate models to try in order if Google returns 503 High Demand / 429 
         candidate_models = [self.model_name]
         for fallback in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]:
             if fallback not in candidate_models:
