@@ -117,48 +117,67 @@ class GeminiService:
             self.client = None
 
     def _call_gemini_with_retry(self, contents: List[Any], schema_description: str) -> Dict[str, Any]:
-        """Execute Gemini generate_content call with one retry on parse failure."""
+        """Execute Gemini generate_content call with automatic fallback across models and retry on parse failure."""
         if self.is_mock:
             raise RuntimeError("Mock mode active; should not invoke live client directly")
 
-        raw_response_text = ""
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-            )
-            raw_response_text = response.text or ""
-            return clean_and_parse_json(raw_response_text)
-        except (json.JSONDecodeError, ValueError) as parse_err:
-            logger.warning(
-                "Gemini response failed initial JSON parsing: %s. Retrying once...",
-                parse_err,
-            )
-            # Attempt 1 retry with corrective prompt
+        # Candidate models to try in order if Google returns 503 High Demand / 429
+        candidate_models = [self.model_name]
+        for fallback in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash"]:
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
+
+        last_err: Optional[Exception] = None
+
+        for model_to_use in candidate_models:
+            raw_response_text = ""
             try:
-                retry_contents = contents + [
-                    f"CRITICAL: Your previous response could not be parsed as valid JSON: '{raw_response_text}'. "
-                    f"Please convert it into STRICT valid JSON with no markdown formatting or prose. "
-                    f"Schema required: {schema_description}"
-                ]
-                retry_response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=retry_contents,
+                logger.info("Calling Gemini with model: %s", model_to_use)
+                response = self.client.models.generate_content(
+                    model=model_to_use,
+                    contents=contents,
                 )
-                return clean_and_parse_json(retry_response.text or "")
-            except Exception as retry_err:
-                logger.error("Gemini failed after retry: %s", retry_err)
-                raise GeminiAPIError(
-                    message=f"Gemini returned invalid or unparseable JSON after retry: {str(retry_err)}",
-                    status_code=502,
-                    details={"raw_response": raw_response_text},
+                raw_response_text = response.text or ""
+                return clean_and_parse_json(raw_response_text)
+            except (json.JSONDecodeError, ValueError) as parse_err:
+                logger.warning(
+                    "Gemini (%s) failed initial JSON parsing: %s. Retrying once with corrective prompt...",
+                    model_to_use,
+                    parse_err,
                 )
-        except Exception as api_err:
-            logger.error("Upstream Gemini API error: %s", api_err)
-            raise GeminiAPIError(
-                message=f"Gemini API request failed: {str(api_err)}",
-                status_code=502,
-            )
+                try:
+                    retry_contents = contents + [
+                        f"CRITICAL: Your previous response could not be parsed as valid JSON: '{raw_response_text}'. "
+                        f"Please convert it into STRICT valid JSON with no markdown formatting or prose. "
+                        f"Schema required: {schema_description}"
+                    ]
+                    retry_response = self.client.models.generate_content(
+                        model=model_to_use,
+                        contents=retry_contents,
+                    )
+                    return clean_and_parse_json(retry_response.text or "")
+                except Exception as retry_err:
+                    logger.error("Gemini (%s) failed after retry: %s", model_to_use, retry_err)
+                    last_err = retry_err
+                    continue
+            except Exception as api_err:
+                err_str = str(api_err)
+                logger.warning("Gemini API error on model %s: %s", model_to_use, err_str)
+                last_err = api_err
+                # Check for temporary demand spikes (503), quota limits (429), or unavailable status
+                transient_indicators = ["503", "unavailable", "high demand", "429", "quota", "resource_exhausted", "not found"]
+                if any(ind in err_str.lower() for ind in transient_indicators):
+                    logger.info("Retrying with next fallback model due to capacity limit...")
+                    continue
+                else:
+                    continue
+
+        logger.error("All Gemini candidate models failed: %s", last_err)
+        raise GeminiAPIError(
+            message=f"Gemini API request failed across models: {str(last_err)}",
+            status_code=502,
+            details={"candidate_models": candidate_models, "last_error": str(last_err)},
+        )
 
     def detect_potholes(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> Dict[str, Any]:
         """Perform single-image pothole detection."""
