@@ -1,0 +1,38 @@
+{
+  "report_id": 1,
+  "location_id": 5,
+  "status": "new",
+  "compared_to_report_id": null,
+  "detection": {
+    "potholes_detected": true,
+    "count": 2,
+    "detections": [
+      {
+        "bbox": [
+          0.35,
+          0.45,
+          0.4,
+          0.3
+        ],
+        "severity": "high",
+        "estimated_area_percent": 12,
+        "description": "Large, deep, irregular pothole with exposed aggregate and loose debris, indicative of severe pavement failure."
+      },
+      {
+        "bbox": [
+          0.4,
+          0.15,
+          0.2,
+          0.1
+        ],
+        "severity": "medium",
+        "estimated_area_percent": 2.5,
+        "description": "Smaller, shallower depression appearing to be a failed patch or developing pothole with some surface erosion."
+      }
+    ],
+    "overall_severity": "high",
+    "report_summary": "The road surface exhibits significant structural degradation, primarily characterized by one large, deep pothole with exposed aggregate and loose debris, rated as high severity. A secondary, smaller and shallower defect, likely a failed patch or developing pothole, is also present with medium severity. These defects collectively indicate a critical need for immediate repair to ensure road safety and prevent further deterioration."
+  },
+  "pdf_url": "/api/v1/reports/1/pdf",
+  "created_at": "2026-09-16T05:31:41.382411"
+}

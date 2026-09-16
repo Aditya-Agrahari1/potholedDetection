@@ -263,9 +263,10 @@ class GeminiService:
                 "report_summary": "Comparative inspection indicates the pothole has worsened significantly over the monitoring period, expanding by approximately 24.5% in surface area. Edge disintegration indicates elevated risk to vehicular traffic; patching crew dispatch is advised.",
             }
 
-        prompt = COMPARISON_PROMPT.format(
-            old_timestamp=old_timestamp,
-            new_timestamp=new_timestamp,
+        prompt = (
+            COMPARISON_PROMPT
+            .replace("{old_timestamp}", str(old_timestamp))
+            .replace("{new_timestamp}", str(new_timestamp))
         )
 
         contents = [

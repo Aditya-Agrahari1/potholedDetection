@@ -148,7 +148,13 @@ async def create_report(
             .first()
         )
 
-    if matched is not None and previous_report is not None:
+    can_compare = (
+        matched is not None
+        and previous_report is not None
+        and storage.file_exists(previous_report.photo_path)
+    )
+
+    if can_compare and previous_report is not None:
         # Sequential follow-up report at existing location -> Run comparison
         compared_to_id = previous_report.id
         abs_old_photo_path = storage.get_absolute_path(previous_report.photo_path)
@@ -178,11 +184,13 @@ async def create_report(
                 },
             )
     else:
-        # Brand new location (or first report for this location) -> Run single-image detection
+        # Brand new location (or baseline photo missing on disk) -> Run single-image detection
         if matched is None:
             location = Location(latitude=latitude, longitude=longitude)
             db.add(location)
             db.flush()  # Populates location.id
+        elif previous_report is not None:
+            compared_to_id = previous_report.id
 
         try:
             detection_result = gemini.detect_potholes(image_bytes=photo_bytes, mime_type=content_type)
