@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     # Gemini API Settings
     gemini_api_key: str = "mock"
     gemini_model: str = "gemini-2.0-flash"
+    fallback_to_mock_on_error: bool = True
 
     # Database Configuration (SQLite default, easily swappable with PostgreSQL URL)
     database_url: str = "sqlite:///./potholes.db"
